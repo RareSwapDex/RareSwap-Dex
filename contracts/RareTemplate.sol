@@ -878,7 +878,7 @@ contract TheRareAntiquitiesTokenLtd is
     function acceptRecoveryAdminOwnership(bytes memory key) external {
         require(
             _msgSender() == recoveryAdminCandidate,
-            "LERC20: Must be canditate"
+            "LERC20: Must be candidate"
         );
         require(keccak256(key) == recoveryAdminKeyHash, "LERC20: Invalid key");
         recoveryAdmin = recoveryAdminCandidate;
