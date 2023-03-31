@@ -401,7 +401,7 @@ contract TheRareAntiquitiesTokenLtd is
     function setMarketingWallet(
         address walletAddress
     ) public onlyRole(WALLET_ROLE) {
-        require(walletAddress != address(0), "includeInFee: ZERO");
+        require(walletAddress != address(0), "mkWallet: ZERO");
         marketingWallet = walletAddress;
         emit AuditLog("We have Updated the setMarketingWallet:", walletAddress);
     }
@@ -412,7 +412,7 @@ contract TheRareAntiquitiesTokenLtd is
     function setAntiquitiesWallet(
         address walletAddress
     ) public onlyRole(WALLET_ROLE) {
-        require(walletAddress != address(0), "includeInFee: ZERO");
+        require(walletAddress != address(0), "antiqueWallet: ZERO");
         antiquitiesWallet = walletAddress;
         emit AuditLog(
             "We have Updated the setAntiquitiesWallet:",
@@ -424,7 +424,7 @@ contract TheRareAntiquitiesTokenLtd is
     /// @param walletAddress the address of the new gas wallet
     /// @dev this function can only be called by the owner
     function setGasWallet(address walletAddress) public onlyRole(WALLET_ROLE) {
-        require(walletAddress != address(0), "includeInFee: ZERO");
+        require(walletAddress != address(0), "gasWallet: ZERO");
         gasWallet = walletAddress;
         emit AuditLog("We have Updated the gasWallet:", walletAddress);
     }
@@ -878,7 +878,7 @@ contract TheRareAntiquitiesTokenLtd is
     function acceptRecoveryAdminOwnership(bytes memory key) external {
         require(
             _msgSender() == recoveryAdminCandidate,
-            "LERC20: Must be canditate"
+            "LERC20: Must be candidate"
         );
         require(keccak256(key) == recoveryAdminKeyHash, "LERC20: Invalid key");
         recoveryAdmin = recoveryAdminCandidate;
