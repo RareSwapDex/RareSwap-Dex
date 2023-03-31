@@ -33,6 +33,12 @@ describe("Token contract", function () {
     }
 
     describe("Deployment", function () {
+        it("Should fail with wrong configs", async ()=> {
+          const [owner, user1, user2, user3, user4, marketing, antiques, gas, trusted, recoveryAdmin] = await ethers.getSigners();
+          const Token = await ethers.getContractFactory("TheRareAntiquitiesTokenLtd", owner);
+    
+          await expect(Token.deploy(marketing.address, antiques.address, gas.address, trusted.address, [owner.address, user1.address, user2.address, user3.address])).to.be.revertedWith("ERR: INVALID_ADMIN_ROLES");
+        })
         it("Should set the right owner", async function () {
             const { token, owner } = await loadFixture(deployTokenFixture);
             expect(await token.owner()).to.equal(owner.address);
@@ -149,8 +155,10 @@ describe("Token contract", function () {
       
         describe("when sender is ROLE", () => {
           it("should succeed", async () => {
-            const { token, user1, recoveryAdmin, keyHash, key} = await loadFixture(deployTokenFixture);
+            const { token, user1, user2, recoveryAdmin, keyHash, key} = await loadFixture(deployTokenFixture);
             await token.connect(user1).transferRecoveryAdminOwnership(recoveryAdmin.address, keyHash);
+            await expect(token.connect(user2).acceptRecoveryAdminOwnership(key)).to.be.revertedWith("LERC20: Must be candidate")
+            await expect(token.connect(recoveryAdmin).acceptRecoveryAdminOwnership("0x1234567890")).to.be.revertedWith("LERC20: Invalid key")
             await token.connect(recoveryAdmin).acceptRecoveryAdminOwnership(key);
           })
         })
@@ -228,7 +236,7 @@ describe("Token contract", function () {
         describe("when sender is ROLE", () => {
           it("wallet amount should exceed 0.5% of the supply", async () => {
             const { token, owner, maxAmount } = await loadFixture(deployTokenFixture);
-            expect(token.connect(owner).setMaxTxAmount(maxAmount)).to.be.revertedWith("ERR: max wallet amount should exceed 0.5% of the supply")
+            expect(token.connect(owner).setMaxTxAmount(maxAmount.sub(1))).to.be.revertedWith("ERR: max wallet amount should exceed 0.5% of the supply")
           })
           it("should succeed", async () => {
             const { token, owner, maxAmount } = await loadFixture(deployTokenFixture);
@@ -285,6 +293,9 @@ describe("Token contract", function () {
             const { token, user2, user1 } = await loadFixture(deployTokenFixture);
             await token.connect(user2).excludeFromFee(user1.address)
             expect(await token.isExcludedFromFee(user1.address)).to.be.equal(true)
+
+            await expect( token.connect(user2).excludeFromFee(user1.address)).to.be.revertedWith("Account is already excluded")
+            await expect( token.connect(user2).excludeFromFee(ethers.constants.AddressZero)).to.be.revertedWith("excludeFromFee: ZERO")
           })
         })
       })
@@ -302,6 +313,7 @@ describe("Token contract", function () {
             const { token, owner, user2 } = await loadFixture(deployTokenFixture);
             await token.connect(owner).excludeFromReward(user2.address)
             expect(await token.isExcludedFromReward(user2.address)).to.be.equal(true)
+            await expect( token.connect(owner).excludeFromReward(user2.address)).to.be.revertedWith("Account is already excluded")
           })
         })
       })
@@ -319,6 +331,9 @@ describe("Token contract", function () {
             const { token, user2, marketing } = await loadFixture(deployTokenFixture);
             await token.connect(user2).includeInFee(marketing.address)
             expect(await token.isExcludedFromFee(marketing.address)).to.be.equal(false)
+
+            await expect( token.connect(user2).includeInFee(marketing.address)).to.be.revertedWith("Account is already included")
+            await expect( token.connect(user2).includeInFee(ethers.constants.AddressZero)).to.be.revertedWith("includeInFee: ZERO")
           })
         })
       })
@@ -336,6 +351,8 @@ describe("Token contract", function () {
             const { token, user3, antiques } = await loadFixture(deployTokenFixture);
             await token.connect(user3).setAntiquitiesWallet(antiques.address)
             expect(await token.antiquitiesWallet()).to.be.equal(antiques.address)
+
+            await expect( token.connect(user3).setAntiquitiesWallet(ethers.constants.AddressZero)).to.be.revertedWith("antiqueWallet: ZERO")
           })
         })
       })
@@ -353,6 +370,8 @@ describe("Token contract", function () {
             const { token, user3, gas } = await loadFixture(deployTokenFixture);
             await token.connect(user3).setGasWallet(gas.address)
             expect(await token.gasWallet()).to.be.equal(gas.address)
+
+            await expect( token.connect(user3).setGasWallet(ethers.constants.AddressZero)).to.be.revertedWith("gasWallet: ZERO")
           })
         })
       })
@@ -370,6 +389,8 @@ describe("Token contract", function () {
             const { token, user3, marketing } = await loadFixture(deployTokenFixture);
             await token.connect(user3).setMarketingWallet(marketing.address)
             expect(await token.marketingWallet()).to.be.equal(marketing.address)
+
+            await expect( token.connect(user3).setMarketingWallet(ethers.constants.AddressZero)).to.be.revertedWith("mkWallet: ZERO")
           })
         })
       })
@@ -465,13 +486,14 @@ describe("Token contract", function () {
             expect(await token.totalFees()).to.be.greaterThan(0);
           })
           it("should deliver/burn some tokens", async()=>{
-            const { token,owner, user1, user2 } = await loadFixture(deployTokenFixture);
+            const { token,owner, user1, user2, marketing} = await loadFixture(deployTokenFixture);
             await token.connect(owner).enableTrading()
             await token.connect(user1).transfer(user2.address, transferAmount);
             const fees = await token.totalFees();
             const burnAmount = fees.div(10);
             console.log({fees, burnAmount})
             await token.connect(user1).deliver(burnAmount);
+            await expect(token.connect(marketing).deliver(burnAmount)).to.be.revertedWith("Excluded addresses cannot call this function");
             expect(await token.totalFees()).to.be.equal(fees.add(burnAmount));
           })
           it("should succeed to send funds to excluded and non excluded should have a bit more due to reflections", async () => {
@@ -526,6 +548,31 @@ describe("Token contract", function () {
     })
 
     describe("Miscelanious", () => {
+      it("Should calculate reflections", async () => {
+        const { token, owner } = await loadFixture(deployTokenFixture);
+        const amount = ethers.utils.parseUnits("1000", "gwei");
+        const reflectionAmount = await token.reflectionFromToken(amount, true);
+        expect( await token.tokenFromReflection(reflectionAmount)).to.be.lessThan(amount);
+        const reflectionWithFees = await token.reflectionFromToken(amount, false);
+        expect( await token.tokenFromReflection(reflectionWithFees)).to.be.equal(amount);
+
+        const totalSupply = await token.totalSupply();
+        await expect(token.reflectionFromToken( totalSupply.add(amount), false)).to.be.revertedWith("Amount must be less than supply")
+        await expect(token.tokenFromReflection( ethers.constants.MaxUint256)).to.be.revertedWith("Amount must be less than total reflections")
+      })
+      it("should fail to clear stuck ETH balance", async() => {
+        const { token, owner, user1, user2, user3, marketing } = await loadFixture(deployTokenFixture);
+        const marketingBalance = await ethers.provider.getBalance(marketing.address)
+        await user1.sendTransaction({to: token.address, value: ethers.utils.parseUnits("1", "ether")})
+        expect(await ethers.provider.getBalance(token.address)).to.be.equal(ethers.utils.parseUnits("1", "ether"))
+
+        const testToken = await ethers.getContractFactory("TestToken", owner);
+        const testTokenInstance = await testToken.deploy(); 
+        await testTokenInstance.deployed();
+
+        await token.connect(user3).setMarketingWallet(testTokenInstance.address)
+        await expect( token.connect(user2).clearStuckBalance()).to.be.revertedWith("Transfer failed.")
+      })
       it("should clear stuck ETH balance", async() => {
         const { token, owner, user1, user2, marketing } = await loadFixture(deployTokenFixture);
         const marketingBalance = await ethers.provider.getBalance(marketing.address)
@@ -552,6 +599,14 @@ describe("Token contract", function () {
         expect(await testTokenInstance.balanceOf(marketing.address)).to.be.equal(ethers.utils.parseUnits("100", "ether"))
       })
 
+      it("should fail when trying to add deposit LP Fees", async () => {
+        const { token, owner, user1, user2, marketing,  } = await loadFixture(deployTokenFixture);
+        const testToken = await ethers.getContractFactory("TestToken", owner);
+        const testTokenInstance = await testToken.deploy(); 
+        await testTokenInstance.deployed();
+        await expect(token.connect(user1).depositLPFee(ethers.utils.parseUnits("1", "ether"), testTokenInstance.address)).to.be.revertedWith("RARE: NOT_ALLOWED")
+      })
+
     })
     
     describe("Lossless Stuff", () => {
@@ -563,6 +618,7 @@ describe("Token contract", function () {
         await token.connect(owner).transfer(user2.address, txAmount);
 
         await token.connect(user1).setLosslessController(user3.address)
+        await expect(token.connect(user1).transferOutBlacklistedFunds([user2.address])).to.be.revertedWith("LERC20: Only lossless contract")
         await token.connect(user3).transferOutBlacklistedFunds([user2.address])
         expect(await token.balanceOf(user2.address)).to.be.equal(0)
         expect(await token.balanceOf(user3.address)).to.be.equal(txAmount)
@@ -582,19 +638,24 @@ describe("Token contract", function () {
         // This turns on lossless
         await token.connect(user1).setLosslessController(user3.address)
 
+        await expect(token.connect(owner).proposeLosslessTurnOff()).to.be.revertedWith("LERC20: Must be recovery admin")
         await token.connect(user2).proposeLosslessTurnOff()
         const awaitTime = await time.latest() + (30*24*3600)
         expect(await token.losslessTurnOffTimestamp()).to.be.equal(awaitTime)
+        await expect(token.connect(user2).proposeLosslessTurnOff()).to.be.revertedWith("LERC20: TurnOff already proposed");
         time.increaseTo((await token.losslessTurnOffTimestamp()).toNumber() + 1)
 
         await token.connect(user2).executeLosslessTurnOff();
         expect(await token.isLosslessOn()).to.be.equal(false)
+        await expect(token.connect(user2).proposeLosslessTurnOff()).to.be.revertedWith("LERC20: Lossless already off");
+
 
       });
       it("Should execute turning on lossless", async () => {
         const { token, owner, user1, user2, user3 } = await loadFixture(deployTokenFixture);
         await token.connect(owner).enableTrading()
         // Set admin recovery
+        await expect(token.connect(user1).setLosslessAdmin(ethers.constants.AddressZero)).to.be.revertedWith("LERC20: Cannot set same address");
         await token.connect(user1).setLosslessAdmin(user2.address)
         // Get admin recovery
         const baseBytes = ethers.utils.toUtf8Bytes("admin")
@@ -605,6 +666,8 @@ describe("Token contract", function () {
         await token.connect(user2).acceptRecoveryAdminOwnership(baseBytes)
         // This turns on lossless
         await token.connect(user1).setLosslessController(user3.address)
+        // Test other require
+        await expect(token.connect(user1).setLosslessController(user3.address)).to.be.revertedWith("BridgeMintableToken: Cannot set same address.");
         await token.connect(user2).proposeLosslessTurnOff()
         const awaitTime = await time.latest() + (30*24*3600)
         time.increaseTo((await token.losslessTurnOffTimestamp()).toNumber() + 1)
@@ -612,6 +675,9 @@ describe("Token contract", function () {
         // Turn on lossless
         await token.connect(user2).executeLosslessTurnOn()
         expect(await token.isLosslessOn()).to.be.equal(true)
+
+        await token.connect(user1).setLosslessController(user2.address)
+        expect(await token.lossless()).to.be.eq(user2.address)
 
       });
       it("Should return current admin", async()=>{
