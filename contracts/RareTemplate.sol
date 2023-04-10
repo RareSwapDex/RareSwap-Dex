@@ -74,6 +74,9 @@ contract TheRareAntiquitiesTokenLtd is
     string public constant name = "The Rare Antiquities Token";
     string public constant symbol = "TRAT";
     uint8 public constant decimals = 9;
+    uint16 public constant MIN_TAX = 100;
+    uint16 public constant MAX_TAX = 1500;
+    uint16 public constant TAX_DIVISOR = 10_000;
     //Tax Definition for code and public reference.
     uint256 private _taxFee = 100; // reflection tax in BPS
     uint256 private _previousTaxFee = _taxFee;
@@ -122,6 +125,8 @@ contract TheRareAntiquitiesTokenLtd is
         address _antiquitiesWallet,
         address _gasWallet,
         address _trustedForwarder,
+        address _depWallet,
+        address _router,
         address[] memory adminRoles
     ) ERC2771Context(_trustedForwarder) {
         _rOwned[_msgSender()] = _rTotal;
@@ -132,9 +137,7 @@ contract TheRareAntiquitiesTokenLtd is
         gasWallet = _gasWallet;
 
         // Setup router
-        rareSwapRouter = IRARESwapRouter(
-            0x027bC3A29990aAED16F65a08C8cc3A92E0AFBAA4
-        );
+        rareSwapRouter = IRARESwapRouter(_router);
         WETH = rareSwapRouter.WETH();
         // Create the pair
         rareSwapPair = IRARESwapFactory(rareSwapRouter.factory()).createPair(
@@ -150,7 +153,7 @@ contract TheRareAntiquitiesTokenLtd is
             "FEE_UPDATE_FAILED"
         );
 
-        depWallet = 0x611980Ea951D956Bd04C39A5A176EaB35EB93982;
+        depWallet = _depWallet;
         //exclude owner and this contract from fee
         //exclude definition to avoid problems with swap,router and owner or marketing wallets from getting fees.
 
@@ -184,7 +187,7 @@ contract TheRareAntiquitiesTokenLtd is
     /// @dev only owner can call this function, minimum limit is 0.5% of the total supply
     function setMaxWalletAmount(uint256 amount) external onlyRole(MAX_ROLE) {
         require(
-            amount > 2_500_000_000,
+            amount > (totalSupply() * 5) / (1000 * 1 gwei),
             "ERR: max wallet amount should exceed 0.5% of the supply"
         );
         _maxWallet = amount * 10 ** 9;
@@ -434,7 +437,7 @@ contract TheRareAntiquitiesTokenLtd is
     /// @dev this function can only be called by the owner, the amount must be greater than 0.5% of the total supply
     function setMaxTxAmount(uint256 amount) external onlyRole(MAX_ROLE) {
         require(
-            amount >= 2_500_000_000,
+            amount >= ((totalSupply() * 5) / (1000 * 1 gwei)),
             "ERR: max tx amount should exceed 0.5% of the supply"
         );
         _maxTxAmount = amount * 10 ** 9;
@@ -537,9 +540,9 @@ contract TheRareAntiquitiesTokenLtd is
         _gasFee = _gasTaxBPS;
 
         _totalTax = _taxFee + _marketingFee + _antiquitiesFee + _gasFee;
-        require(_totalTax <= 1500, "total tax cannot exceed 15%");
+        require(_totalTax <= MAX_TAX, "total tax cannot exceed 15%");
         require(
-            (_marketingFee + _antiquitiesFee + _gasFee) >= 100,
+            (_marketingFee + _antiquitiesFee + _gasFee) >= MIN_TAX,
             "ERR: marketing + antiquities + gas tax must be over 1%"
         );
 
@@ -646,7 +649,7 @@ contract TheRareAntiquitiesTokenLtd is
     /// @param _amount the amount of tokens to be taxed
     /// @return the amount of tokens to be taxed
     function calculateTaxFee(uint256 _amount) private view returns (uint256) {
-        return (_amount * _taxFee) / 10 ** 4;
+        return (_amount * _taxFee) / TAX_DIVISOR;
     }
 
     /// @notice remove all fees

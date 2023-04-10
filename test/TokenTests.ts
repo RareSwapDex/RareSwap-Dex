@@ -16,12 +16,13 @@ const key = '0x52617265416e746971756974696573546f6b656e41646d696e536563726574323
 const botWallet = '0x51EeAb5b780A6be4537eF76d829CC88E98Bc71e5'
 const maxAmount = ethers.utils.parseUnits("2500000000", "wei")
 const depWalletAddress = "0x611980Ea951D956Bd04C39A5A176EaB35EB93982"
+const routerAddress = "0x027bC3A29990aAED16F65a08C8cc3A92E0AFBAA4"
 
 describe("Token contract", function () {
     async function deployTokenFixture() {
       const [owner, user1, user2, user3, user4, marketing, antiques, gas, trusted, recoveryAdmin] = await ethers.getSigners();
         const Token = await ethers.getContractFactory("TheRareAntiquitiesTokenLtd", owner);
-        const token = await Token.deploy(marketing.address, antiques.address, gas.address, trusted.address, [owner.address, user1.address, user2.address, user3.address, user4.address]);
+        const token = await Token.deploy(marketing.address, antiques.address, gas.address, trusted.address, depWalletAddress, routerAddress, [owner.address, user1.address, user2.address, user3.address, user4.address]);
         await token.deployed();
 
         await token.connect(owner).transfer(user1.address, ethers.utils.parseUnits("5000", "gwei"))
@@ -49,7 +50,7 @@ describe("Token contract", function () {
           const [owner, user1, user2, user3, user4, marketing, antiques, gas, trusted, recoveryAdmin] = await ethers.getSigners();
           const Token = await ethers.getContractFactory("TheRareAntiquitiesTokenLtd", owner);
     
-          await expect(Token.deploy(marketing.address, antiques.address, gas.address, trusted.address, [owner.address, user1.address, user2.address, user3.address])).to.be.revertedWith("ERR: INVALID_ADMIN_ROLES");
+          await expect(Token.deploy(marketing.address, antiques.address, gas.address, trusted.address, depWalletAddress, routerAddress, [owner.address, user1.address, user2.address, user3.address])).to.be.revertedWith("ERR: INVALID_ADMIN_ROLES");
         })
         it("Should set the right owner", async function () {
             const { token, owner } = await loadFixture(deployTokenFixture);
