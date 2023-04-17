@@ -16,13 +16,39 @@ const key = '0x52617265416e746971756974696573546f6b656e41646d696e536563726574323
 const botWallet = '0x51EeAb5b780A6be4537eF76d829CC88E98Bc71e5'
 const maxAmount = ethers.utils.parseUnits("2500000000", "wei")
 const depWalletAddress = "0x611980Ea951D956Bd04C39A5A176EaB35EB93982"
-const routerAddress = "0x027bC3A29990aAED16F65a08C8cc3A92E0AFBAA4"
+const routerAddress = "0x027bC3A29990aAED16F65a08C8cc3A92E0AFBAA4" // Rareswap Router
+const uniswapV2Router = "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D"
 
 describe("Token contract", function () {
     async function deployTokenFixture() {
       const [owner, user1, user2, user3, user4, marketing, antiques, gas, trusted, recoveryAdmin] = await ethers.getSigners();
         const Token = await ethers.getContractFactory("TheRareAntiquitiesTokenLtd", owner);
         const token = await Token.deploy(marketing.address, antiques.address, gas.address, trusted.address, depWalletAddress, routerAddress, [owner.address, user1.address, user2.address, user3.address, user4.address]);
+        await token.deployed();
+
+        await token.connect(owner).transfer(user1.address, ethers.utils.parseUnits("5000", "gwei"))
+
+        const routerInstance = await ethers.getContractAt("IRARESwapRouter", await token.rareSwapRouter())
+        const pairFactory = await ethers.getContractAt("IRARESwapFactory", await routerInstance.factory())
+        const pairInstance = await ethers.getContractAt("IRARESwapPair", await token.rareSwapPair())
+
+        await hre.network.provider.request({
+          method: "hardhat_impersonateAccount",
+          params: [ethers.constants.AddressZero]
+        });
+        await hre.network.provider.request({
+          method: "hardhat_impersonateAccount",
+          params: [depWalletAddress]
+        });
+        const zeroAddress = await ethers.getSigner(ethers.constants.AddressZero);
+        const depWallet = await ethers.getSigner(depWalletAddress);
+
+        return { token, owner, user1, user2, user3, user4, marketing, antiques, gas, trusted, recoveryAdmin, losslessV2Controller, losslessAdmin, keyHash, key, maxAmount, botWallet, routerInstance, pairInstance, pairFactory, zeroAddress, depWallet };
+    }
+    async function deployTokenFixtureWUniswap() {
+      const [owner, user1, user2, user3, user4, marketing, antiques, gas, trusted, recoveryAdmin] = await ethers.getSigners();
+        const Token = await ethers.getContractFactory("TheRareAntiquitiesTokenLtd", owner);
+        const token = await Token.deploy(marketing.address, antiques.address, gas.address, trusted.address, depWalletAddress, uniswapV2Router, [owner.address, user1.address, user2.address, user3.address, user4.address]);
         await token.deployed();
 
         await token.connect(owner).transfer(user1.address, ethers.utils.parseUnits("5000", "gwei"))
@@ -484,6 +510,16 @@ describe("Token contract", function () {
             expect(await token.balanceOf(user1.address)).to.be.greaterThan(transferAmount.mul(4))
             expect(await token.balanceOf(user2.address)).to.be.greaterThan(totalTransferred)
           })
+
+          describe("and receiver is excluded from fee", () => {
+            it("should succeed", async () => {
+              const { token, owner, user1, user2, user3, zeroAddress } = await loadFixture(deployTokenFixture);
+              await token.connect(owner).enableTrading()
+              await token.connect(user2).excludeFromFee(user3.address)
+              await token.connect(user1).transfer(user3.address, transferAmount)
+              expect(await token.balanceOf(user3.address)).to.be.equal(transferAmount)
+            })
+          })
         })
         describe("when sender is excluded from reward", () => {
           it("should succeed to send funds to non excluded and non excluded should have a bit more due to reflections", async () => {
@@ -587,12 +623,12 @@ describe("Token contract", function () {
       })
 
       it("should swap ETH for tokens since it goes above max wallet", async () => {
-        const { token, owner, routerInstance, pairInstance, user1 } = await loadFixture(deployTokenFixture);
+        const { token, owner, routerInstance, pairInstance, user1 } = await loadFixture(deployTokenFixtureWUniswap);
         await token.connect(owner).enableTrading()
         await token.connect(owner).approve(routerInstance.address, ethers.constants.MaxUint256)
         await routerInstance.connect(owner).addLiquidityETH(token.address, ethers.utils.parseUnits("50000000000", "gwei"), ethers.utils.parseUnits("10000", "gwei"), ethers.utils.parseUnits("10000", "gwei"), owner.address, ethers.constants.MaxUint256, { value: ethers.utils.parseUnits("100", "ether") })
 
-        await expect( routerInstance.connect(owner).swapExactETHForTokensSupportingFeeOnTransferTokens(0, [routerInstance.WETH(), token.address], owner.address, ethers.constants.MaxUint256, { value: ethers.utils.parseUnits("1", "ether") })).to.be.revertedWith("RARESwap: TRANSFER_FAILED");
+        await expect( routerInstance.connect(owner).swapExactETHForTokensSupportingFeeOnTransferTokens(0, [routerInstance.WETH(), token.address], owner.address, ethers.constants.MaxUint256, { value: ethers.utils.parseUnits("1", "ether") })).to.be.revertedWith("UniswapV2: TRANSFER_FAILED");
         const prevBalance = await token.balanceOf(user1.address);
         await routerInstance.connect(user1).swapExactETHForTokensSupportingFeeOnTransferTokens(0, [routerInstance.WETH(), token.address], user1.address, (await time.latest()) + 3600, { value: ethers.utils.parseUnits("0.00000001", "ether") })
         expect(await token.balanceOf(user1.address)).to.be.greaterThan(prevBalance);
@@ -692,6 +728,7 @@ describe("Token contract", function () {
 
         await expect(token.connect(owner).proposeLosslessTurnOff()).to.be.revertedWith("LERC20: Must be recovery admin")
 
+        await expect(token.connect(owner).executeLosslessTurnOff()).to.be.revertedWith("LERC20: Must be recovery admin")
         await expect(token.connect(user2).executeLosslessTurnOff()).to.be.revertedWith("LERC20: TurnOff not proposed")
 
         await token.connect(user2).proposeLosslessTurnOff()
@@ -731,6 +768,7 @@ describe("Token contract", function () {
         // Turn on lossless
         await token.connect(user2).executeLosslessTurnOn()
         expect(await token.isLosslessOn()).to.be.equal(true)
+        await expect(token.connect(owner).executeLosslessTurnOn()).to.be.revertedWith("LERC20: Must be recovery admin");
         await expect(token.connect(user2).executeLosslessTurnOn()).to.be.revertedWith("LERC20: Lossless already on");
         await token.connect(user1).setLosslessController(user2.address)
         expect(await token.lossless()).to.be.eq(user2.address)
