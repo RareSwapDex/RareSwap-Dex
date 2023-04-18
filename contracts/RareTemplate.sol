@@ -144,14 +144,15 @@ contract TheRareAntiquitiesTokenLtd is
             address(this),
             WETH
         );
-        // Set base token in the pair as WETH, which acts as the tax token
-        IRARESwapPair(rareSwapPair).setBaseToken(WETH);
-        require(
+        try IRARESwapPair(rareSwapPair).setBaseToken(WETH) {
             IRARESwapPair(rareSwapPair).updateTotalFee(
                 _marketingFee + _antiquitiesFee + _gasFee
-            ),
-            "FEE_UPDATE_FAILED"
-        );
+            );
+        } catch {
+            // If the pair doesn't support setBaseToken, we can't set the base token
+            // and we can't update the total fee
+        }
+        // Set base token in the pair as WETH, which acts as the tax token
 
         depWallet = _depWallet;
         //exclude owner and this contract from fee
