@@ -353,7 +353,8 @@ contract TheRareAntiquitiesTokenLtd is
             "Amount must be less than total reflections"
         );
         uint256 currentRate = _getRate();
-        return rAmount / currentRate;
+        if (currentRate > 0) return rAmount / currentRate;
+        return rAmount;
     }
 
     /// @notice excludes an address from reward
@@ -373,10 +374,9 @@ contract TheRareAntiquitiesTokenLtd is
     /// @notice updates the Fees set up in the DEX pairs
     /// @param fee the new fee amount to update
     function _updatePairsFee(uint256 fee) internal {
-        require(
-            IRARESwapPair(rareSwapPair).updateTotalFee(fee),
-            "FEE_UPDATE_FAILED"
-        );
+        try IRARESwapPair(rareSwapPair).updateTotalFee(fee) {} catch {
+            emit Log("Cant update fee", fee);
+        }
     }
 
     /// @notice excludes and address from transfer fees
@@ -481,11 +481,14 @@ contract TheRareAntiquitiesTokenLtd is
     /// @param tokenAddress the address of the ERC20 token to claim
     /// @dev no matter who calls this function, funds are always sent to marketing wallet
     function claimERCtokens(IERC20 tokenAddress) external {
-        bool succ = tokenAddress.transfer(
-            marketingWallet,
-            tokenAddress.balanceOf(address(this))
-        );
-        require(succ, "Transfer failed.");
+        try
+            tokenAddress.transfer(
+                marketingWallet,
+                tokenAddress.balanceOf(address(this))
+            )
+        {} catch {
+            revert("Transfer failed.");
+        }
     }
 
     /// @notice add a bot wallet to stop from trading and selling
@@ -728,7 +731,7 @@ contract TheRareAntiquitiesTokenLtd is
         }
 
         if (botWallets[sender] || botWallets[recipient]) {
-            require(botsCantrade, "bots arent allowed to trade");
+            revert("bots arent allowed to trade");
         }
 
         if (!takeFee) removeAllFee();
