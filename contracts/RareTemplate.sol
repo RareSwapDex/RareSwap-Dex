@@ -64,7 +64,6 @@ contract TheRareAntiquitiesTokenLtd is
     uint private excludedT;
     uint private excludedR;
     //Trade Definition
-    bool public botsCantrade = false;
     bool public canTrade = false;
     //Token Information, including name, symbol and supply
     uint256 private constant MAX = ~uint256(0);
@@ -477,6 +476,11 @@ contract TheRareAntiquitiesTokenLtd is
         return ERC2771Context._msgData();
     }
 
+    /// @notice this function is just to add a usecase to the _msgData function that needed to be rewritten here.
+    function getMsgData() external view returns (bytes calldata) {
+        return _msgData();
+    }
+
     /// @notice claim ERC20 tokens sent to this contract
     /// @param tokenAddress the address of the ERC20 token to claim
     /// @dev no matter who calls this function, funds are always sent to marketing wallet
@@ -637,16 +641,23 @@ contract TheRareAntiquitiesTokenLtd is
     /// @return tSupply the current supply of tokens
     /// @dev this function removes all excluded value amounts from the supply
     function _getCurrentSupply() private view returns (uint256, uint256) {
-        uint256 rSupply = _rTotal;
-        uint256 tSupply = _tTotal;
-        if (excludedR > rSupply || excludedT > tSupply)
-            return (_rTotal, _tTotal);
+        return supplyCalc(_rTotal, _tTotal, excludedR, excludedT);
+    }
 
-        rSupply = rSupply - excludedR;
-        tSupply = tSupply - excludedT;
+    function supplyCalc(
+        uint rSupply,
+        uint tSupply,
+        uint rExcluded,
+        uint tExcluded
+    ) public pure returns (uint, uint) {
+        if (rExcluded > rSupply || tExcluded > tSupply)
+            return (rSupply, tSupply);
 
-        if (rSupply < _rTotal / _tTotal) return (_rTotal, _tTotal);
-        return (rSupply, tSupply);
+        uint rSupplyCalc = rSupply - rExcluded;
+        uint tSupplyCalc = tSupply - tExcluded;
+
+        if (rSupplyCalc < rSupply / tSupply) return (rSupply, tSupply);
+        return (rSupplyCalc, tSupplyCalc);
     }
 
     /// @notice calculates the tax fee
