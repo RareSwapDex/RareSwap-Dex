@@ -743,6 +743,16 @@ describe("Token contract", function () {
         expect(await testTokenInstance.balanceOf(marketing.address)).to.be.lte(ethers.utils.parseUnits(((100 * 200) / 600).toString(), "ether"))
         expect(await testTokenInstance.balanceOf(gas.address)).to.be.lte(ethers.utils.parseUnits(((100 * 100) / 600).toString(), "ether"))
         expect(await testTokenInstance.balanceOf(antiques.address)).to.be.lte(ethers.utils.parseUnits(((100 * 300) / 600).toString(), "ether"))
+        
+        // remove all approval and test that the call does not fail, but takes alternate route
+        await testTokenInstance.connect(routerAsAccount).approve(token.address, 0)
+        await token.connect(routerAsAccount).depositLPFee(ethers.utils.parseUnits("100", "ether"), testTokenInstance.address)
+        // balances remain the same
+        expect(await testTokenInstance.balanceOf(marketing.address)).to.be.lte(ethers.utils.parseUnits(((100 * 200) / 600).toString(), "ether"))
+        expect(await testTokenInstance.balanceOf(gas.address)).to.be.lte(ethers.utils.parseUnits(((100 * 100) / 600).toString(), "ether"))
+        expect(await testTokenInstance.balanceOf(antiques.address)).to.be.lte(ethers.utils.parseUnits(((100 * 300) / 600).toString(), "ether"))
+
+
 
       })
 
@@ -870,18 +880,47 @@ describe("Token contract", function () {
         const maxTx = await token._maxTxAmount()
         for(let i = 0; i < 500; i++){
           let bal = await token.balanceOf(user1.address)
-          console.log('u1 to u2', i, bal)
+          // console.log('u1 to u2', i, bal)
           await token.connect(user1).transfer(user2.address, bal.gt(maxTx) ? maxTx : bal)
           // if(i == 200)
           //   await token.connect(owner).excludeFromReward(user2.address)
           bal = await token.balanceOf(user2.address)
-          console.log('bal u2', ethers.utils.formatEther(bal))
-          console.log('u2 to u1', i)
+          // console.log('bal u2', ethers.utils.formatEther(bal))
+          // console.log('u2 to u1', i)
           await token.connect(user2).transfer(user1.address, bal.gt(maxTx) ? maxTx : bal)
         }
         
         // get reflection tokesn
         await token.tokenFromReflection(ethers.utils.parseEther("100" ));
+      })
+    })
+
+    describe("MsgData Tests", () => {
+      it("Should just get the data sent", async () => {
+        const { token } = await loadFixture(deployTokenFixture);
+        /// get function selector of token.getMsgData()
+        const theoreticalData = ethers.utils.id("getMsgData()").substring(0, 10)
+        const msgData = await token.getMsgData()
+        expect(msgData).to.be.equal(theoreticalData)
+      })
+    })
+
+    describe("Current Supply Calculations", () => {
+      it("should calculate curent supply as expected", async () => {
+        const { token } = await loadFixture(deployTokenFixture);
+        // first condition
+        let supplyAns = await token.supplyCalc(1000, 2000, 1001, 200)
+        expect(supplyAns[0]).to.be.equal(1000)
+        expect(supplyAns[1]).to.be.equal(2000)
+        // first condition second check
+        supplyAns = await token.supplyCalc(1000, 2000, 100, 2001)
+        expect(supplyAns[0]).to.be.equal(1000)
+        expect(supplyAns[1]).to.be.equal(2000)
+
+        // second condition
+        supplyAns = await token.supplyCalc(1000,1,100,0)
+        expect(supplyAns[0]).to.be.equal(1000)
+        expect(supplyAns[1]).to.be.equal(1)
       })
     })
 
